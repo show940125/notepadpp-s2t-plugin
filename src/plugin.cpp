@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <tchar.h>
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -8,7 +9,8 @@
 namespace {
 
 constexpr TCHAR kPluginName[] = TEXT("S2TConverter");
-constexpr int kMenuCount = 1;
+constexpr int kMenuCount = 3;
+constexpr DWORD kAutoDetectFlag = 0;
 
 // Minimal Notepad++ plugin interface declarations.
 struct NppData {
@@ -59,6 +61,7 @@ constexpr UINT SCI_GETSELECTIONSTART = 2143;
 constexpr UINT SCI_GETSELECTIONEND = 2145;
 constexpr UINT SCI_GETTEXTRANGE = 2162;
 constexpr UINT SCI_GETTEXTLENGTH = 2183;
+constexpr UINT SCI_GETCODEPAGE = 2137;
 constexpr UINT SCI_SETTARGETSTART = 2190;
 constexpr UINT SCI_SETTARGETEND = 2192;
 constexpr UINT SCI_REPLACETARGET = 2194;
@@ -66,20 +69,20 @@ constexpr UINT SCI_REPLACETARGET = 2194;
 NppData g_nppData{};
 FuncItem g_menuItems[kMenuCount]{};
 
-std::wstring Utf8ToUtf16(const std::string& input) {
+std::wstring BytesToUtf16(const std::string& input, UINT codePage) {
     if (input.empty()) {
         return {};
     }
 
     const int required = MultiByteToWideChar(
-        CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0);
+        codePage, 0, input.data(), static_cast<int>(input.size()), nullptr, 0);
     if (required <= 0) {
         throw std::runtime_error("MultiByteToWideChar failed.");
     }
 
     std::wstring output(static_cast<size_t>(required), L'\0');
     if (MultiByteToWideChar(
-            CP_UTF8, 0, input.data(), static_cast<int>(input.size()),
+            codePage, 0, input.data(), static_cast<int>(input.size()),
             output.data(), required) <= 0) {
         throw std::runtime_error("MultiByteToWideChar failed.");
     }
@@ -87,13 +90,13 @@ std::wstring Utf8ToUtf16(const std::string& input) {
     return output;
 }
 
-std::string Utf16ToUtf8(const std::wstring& input) {
+std::string Utf16ToBytes(const std::wstring& input, UINT codePage) {
     if (input.empty()) {
         return {};
     }
 
     const int required = WideCharToMultiByte(
-        CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0,
+        codePage, 0, input.data(), static_cast<int>(input.size()), nullptr, 0,
         nullptr, nullptr);
     if (required <= 0) {
         throw std::runtime_error("WideCharToMultiByte failed.");
@@ -101,7 +104,7 @@ std::string Utf16ToUtf8(const std::wstring& input) {
 
     std::string output(static_cast<size_t>(required), '\0');
     if (WideCharToMultiByte(
-            CP_UTF8, 0, input.data(), static_cast<int>(input.size()),
+            codePage, 0, input.data(), static_cast<int>(input.size()),
             output.data(), required, nullptr, nullptr) <= 0) {
         throw std::runtime_error("WideCharToMultiByte failed.");
     }
@@ -109,13 +112,13 @@ std::string Utf16ToUtf8(const std::wstring& input) {
     return output;
 }
 
-std::wstring ToTraditionalChinese(const std::wstring& input) {
+std::wstring ConvertChineseMap(const std::wstring& input, DWORD mapFlag) {
     if (input.empty()) {
         return {};
     }
 
     const int required = LCMapStringEx(
-        LOCALE_NAME_SYSTEM_DEFAULT, LCMAP_TRADITIONAL_CHINESE, input.data(),
+        LOCALE_NAME_SYSTEM_DEFAULT, mapFlag, input.data(),
         static_cast<int>(input.size()), nullptr, 0, nullptr, nullptr, 0);
     if (required <= 0) {
         throw std::runtime_error("LCMapStringEx failed.");
@@ -123,9 +126,9 @@ std::wstring ToTraditionalChinese(const std::wstring& input) {
 
     std::wstring output(static_cast<size_t>(required), L'\0');
     if (LCMapStringEx(
-            LOCALE_NAME_SYSTEM_DEFAULT, LCMAP_TRADITIONAL_CHINESE,
-            input.data(), static_cast<int>(input.size()), output.data(),
-            required, nullptr, nullptr, 0) <= 0) {
+            LOCALE_NAME_SYSTEM_DEFAULT, mapFlag, input.data(),
+            static_cast<int>(input.size()), output.data(), required, nullptr,
+            nullptr, 0) <= 0) {
         throw std::runtime_error("LCMapStringEx failed.");
     }
 
@@ -141,7 +144,25 @@ HWND CurrentScintilla() {
                         : g_nppData._scintillaSecondHandle;
 }
 
-std::string ReadRangeUtf8(HWND scintilla, Sci_PositionCR start, Sci_PositionCR end) {
+UINT GetDocumentCodePage(HWND scintilla) {
+    const LRESULT cp = SendMessage(scintilla, SCI_GETCODEPAGE, 0, 0);
+    return (cp > 0) ? static_cast<UINT>(cp) : CP_ACP;
+}
+
+size_t CountDifferences(const std::wstring& lhs, const std::wstring& rhs) {
+    const size_t minLen = std::min(lhs.size(), rhs.size());
+    size_t count = 0;
+    for (size_t i = 0; i < minLen; ++i) {
+        if (lhs[i] != rhs[i]) {
+            ++count;
+        }
+    }
+    count += (lhs.size() > rhs.size()) ? (lhs.size() - rhs.size())
+                                       : (rhs.size() - lhs.size());
+    return count;
+}
+
+std::string ReadRangeBytes(HWND scintilla, Sci_PositionCR start, Sci_PositionCR end) {
     if (end <= start) {
         return {};
     }
@@ -153,7 +174,7 @@ std::string ReadRangeUtf8(HWND scintilla, Sci_PositionCR start, Sci_PositionCR e
     return std::string(buffer.data(), byteLen);
 }
 
-void ReplaceRangeUtf8(
+void ReplaceRangeBytes(
     HWND scintilla, Sci_PositionCR start, Sci_PositionCR end,
     const std::string& replacement) {
     SendMessage(scintilla, SCI_SETTARGETSTART, static_cast<WPARAM>(start), 0);
@@ -163,7 +184,32 @@ void ReplaceRangeUtf8(
         reinterpret_cast<LPARAM>(replacement.c_str()));
 }
 
-void ConvertSimplifiedToTraditional() {
+DWORD ChooseDirection(const std::wstring& originalUtf16) {
+    const std::wstring tradUtf16 =
+        ConvertChineseMap(originalUtf16, LCMAP_TRADITIONAL_CHINESE);
+    const std::wstring simpUtf16 =
+        ConvertChineseMap(originalUtf16, LCMAP_SIMPLIFIED_CHINESE);
+
+    const bool tradChanged = tradUtf16 != originalUtf16;
+    const bool simpChanged = simpUtf16 != originalUtf16;
+
+    if (tradChanged && !simpChanged) {
+        return LCMAP_TRADITIONAL_CHINESE;
+    }
+    if (!tradChanged && simpChanged) {
+        return LCMAP_SIMPLIFIED_CHINESE;
+    }
+    if (!tradChanged && !simpChanged) {
+        return kAutoDetectFlag;
+    }
+
+    const size_t tradDiff = CountDifferences(originalUtf16, tradUtf16);
+    const size_t simpDiff = CountDifferences(originalUtf16, simpUtf16);
+    return (tradDiff >= simpDiff) ? LCMAP_TRADITIONAL_CHINESE
+                                  : LCMAP_SIMPLIFIED_CHINESE;
+}
+
+void ApplyConversion(DWORD requestedMapFlag) {
     HWND scintilla = CurrentScintilla();
     if (!scintilla) {
         return;
@@ -181,37 +227,70 @@ void ConvertSimplifiedToTraditional() {
             SendMessage(scintilla, SCI_GETTEXTLENGTH, 0, 0));
     }
 
-    const std::string originalUtf8 = ReadRangeUtf8(scintilla, start, end);
-    if (originalUtf8.empty()) {
+    const std::string originalBytes = ReadRangeBytes(scintilla, start, end);
+    if (originalBytes.empty()) {
         return;
     }
 
     try {
-        const std::wstring originalUtf16 = Utf8ToUtf16(originalUtf8);
-        const std::wstring convertedUtf16 = ToTraditionalChinese(originalUtf16);
-        const std::string convertedUtf8 = Utf16ToUtf8(convertedUtf16);
+        const UINT codePage = GetDocumentCodePage(scintilla);
+        const std::wstring originalUtf16 = BytesToUtf16(originalBytes, codePage);
+        const DWORD mapFlag = (requestedMapFlag == kAutoDetectFlag)
+                                  ? ChooseDirection(originalUtf16)
+                                  : requestedMapFlag;
+        if (mapFlag == kAutoDetectFlag) {
+            return;
+        }
 
-        if (convertedUtf8 == originalUtf8) {
+        const std::wstring convertedUtf16 =
+            ConvertChineseMap(originalUtf16, mapFlag);
+        const std::string convertedBytes = Utf16ToBytes(convertedUtf16, codePage);
+
+        if (convertedBytes == originalBytes) {
             return;
         }
 
         SendMessage(scintilla, SCI_BEGINUNDOACTION, 0, 0);
-        ReplaceRangeUtf8(scintilla, start, end, convertedUtf8);
+        ReplaceRangeBytes(scintilla, start, end, convertedBytes);
         SendMessage(scintilla, SCI_ENDUNDOACTION, 0, 0);
     } catch (const std::exception&) {
         MessageBox(
             g_nppData._nppHandle,
-            TEXT("S2TConverter failed. Please ensure the file is UTF-8 or valid Unicode."),
+            TEXT("Chinese conversion failed due to encoding/code page issues."),
             TEXT("S2TConverter"), MB_OK | MB_ICONERROR);
     }
 }
 
+void ConvertSimplifiedToTraditional() {
+    ApplyConversion(LCMAP_TRADITIONAL_CHINESE);
+}
+
+void ConvertTraditionalToSimplified() {
+    ApplyConversion(LCMAP_SIMPLIFIED_CHINESE);
+}
+
+void ConvertAutoDetectDirection() {
+    ApplyConversion(kAutoDetectFlag);
+}
+
 void InitMenuItems() {
-    lstrcpy(g_menuItems[0]._itemName, TEXT("Convert Simplified -> Traditional"));
+    lstrcpy(g_menuItems[0]._itemName, TEXT("Simplified -> Traditional"));
     g_menuItems[0]._pFunc = ConvertSimplifiedToTraditional;
     g_menuItems[0]._cmdID = 0;
     g_menuItems[0]._init2Check = false;
     g_menuItems[0]._pShKey = nullptr;
+
+    lstrcpy(g_menuItems[1]._itemName, TEXT("Traditional -> Simplified"));
+    g_menuItems[1]._pFunc = ConvertTraditionalToSimplified;
+    g_menuItems[1]._cmdID = 1;
+    g_menuItems[1]._init2Check = false;
+    g_menuItems[1]._pShKey = nullptr;
+
+    lstrcpy(g_menuItems[2]._itemName, TEXT("Auto Detect Direction"));
+    g_menuItems[2]._pFunc = ConvertAutoDetectDirection;
+    g_menuItems[2]._cmdID = 2;
+    g_menuItems[2]._init2Check = false;
+    g_menuItems[2]._pShKey = nullptr;
 }
 
 }  // namespace

@@ -8,6 +8,8 @@
 *.pdb
 *.ilk
 *.idb
+.vs/
+*.VC.db
 
 # CMake artifacts
 CMakeCache.txt

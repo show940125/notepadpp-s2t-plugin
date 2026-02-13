@@ -1,44 +1,64 @@
 # S2TConverter (Notepad++ Plugin)
 
-這是一個最小化 Notepad++ 外掛，只有一個功能：
+Notepad++ plugin for Chinese conversion with selection-first behavior.
 
-- 把簡體中文轉成繁體中文
+## Features
 
-轉換方式使用 Windows `LCMapStringEx(..., LCMAP_TRADITIONAL_CHINESE, ...)`，不需要外部字典套件。
+- `Simplified -> Traditional`
+- `Traditional -> Simplified`
+- `Auto Detect Direction` (auto picks one direction by text difference)
+- Selection first:
+  - If text is selected, convert selection only
+  - If nothing is selected, convert whole document
+- Better encoding handling:
+  - Uses current Scintilla document code page instead of forcing UTF-8
 
-## 功能行為
+## Build
 
-- 有選取文字：只轉換選取範圍
-- 沒有選取文字：轉換整份文件
+## Quick build (recommended)
 
-## 建置需求
-
-- Windows
-- Visual Studio 2022 (含 C++ Desktop workload)
-- CMake 3.20+
-
-## 建置步驟 (x64)
-
-```powershell
-cd C:\Users\a0953041880\notepadpp-s2t-plugin
-cmake -S . -B build -A x64
-cmake --build build --config Release
+```bat
+scripts\build_x64.bat
 ```
 
-輸出檔案：
+Output:
 
-- `C:\Users\a0953041880\notepadpp-s2t-plugin\build\Release\S2TConverter.dll`
+- `build\Release\S2TConverter.dll`
 
-## 安裝到 Notepad++
+## Manual build (MSVC)
 
-1. 關閉 Notepad++
-2. 建立資料夾：
-   - `%AppData%\Notepad++\plugins\S2TConverter\`
-3. 把 `S2TConverter.dll` 複製到該資料夾
-4. 重新開啟 Notepad++
-5. 到選單 `Plugins > S2TConverter > Convert Simplified -> Traditional`
+```bat
+cd /d C:\Users\a0953041880\notepadpp-s2t-plugin
+mkdir build\Release 2>nul
+cl /nologo /LD /EHsc /std:c++17 /DUNICODE /D_UNICODE /DWIN32_LEAN_AND_MEAN /DNOMINMAX src\plugin.cpp /link /NOLOGO user32.lib /DEF:S2TConverter.def /OUT:build\Release\S2TConverter.dll
+```
 
-## 注意
+## Install
 
-- 建議使用 Notepad++ x64 + x64 外掛；如果你是 32 位元 Notepad++，請改用 `-A Win32` 重新編譯。
-- Windows 內建映射不是詞庫等級的語意轉換，少數用詞可能不如 OpenCC 精確。
+Close Notepad++, then copy DLL to one of these:
+
+- User scope (no admin):
+  - `%AppData%\Notepad++\plugins\S2TConverter\S2TConverter.dll`
+- Machine scope (admin):
+  - `C:\Program Files\Notepad++\plugins\S2TConverter\S2TConverter.dll`
+
+Then reopen Notepad++.
+
+## Context Menu
+
+Notepad++ right-click menu is controlled by:
+
+- `%AppData%\Notepad++\contextMenu.xml`
+
+Add these entries under `<ScintillaContextMenu>` if you want right-click access:
+
+```xml
+<Item FolderName="Plugin commands" TranslateID="contextMenu-PluginCommands" PluginEntryName="S2TConverter" PluginCommandItemName="Simplified -> Traditional" />
+<Item FolderName="Plugin commands" TranslateID="contextMenu-PluginCommands" PluginEntryName="S2TConverter" PluginCommandItemName="Traditional -> Simplified" />
+<Item FolderName="Plugin commands" TranslateID="contextMenu-PluginCommands" PluginEntryName="S2TConverter" PluginCommandItemName="Auto Detect Direction" />
+```
+
+## Notes
+
+- Conversion engine uses Windows `LCMapStringEx`.
+- For phrase-level dictionary accuracy, OpenCC is still stronger.
