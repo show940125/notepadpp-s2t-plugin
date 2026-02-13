@@ -44,7 +44,15 @@ Close Notepad++, then copy DLL to one of these:
 
 Then reopen Notepad++.
 
+After DLL installation:
+
+- Plugin commands are always available from top menu:
+  - `Plugins > S2TConverter > ...`
+- Right-click menu entries are optional and require `contextMenu.xml` configuration.
+
 ## Context Menu
+
+This part is optional.
 
 Notepad++ right-click menu is controlled by:
 
@@ -57,6 +65,8 @@ Add these entries under `<ScintillaContextMenu>` if you want right-click access:
 <Item FolderName="Plugin commands" TranslateID="contextMenu-PluginCommands" PluginEntryName="S2TConverter" PluginCommandItemName="Traditional -> Simplified" />
 <Item FolderName="Plugin commands" TranslateID="contextMenu-PluginCommands" PluginEntryName="S2TConverter" PluginCommandItemName="Auto Detect Direction" />
 ```
+
+Then restart Notepad++ to apply context menu changes.
 
 ## Notes
 
