@@ -48,7 +48,7 @@ scripts\build_x64.bat
 #### 手動建置（MSVC）
 
 ```bat
-cd /d C:\Users\a0953041880\notepadpp-s2t-plugin
+cd /d C:\Users\...\notepadpp-s2t-plugin
 mkdir build\Release 2>nul
 cl /nologo /LD /EHsc /std:c++17 /DUNICODE /D_UNICODE /DWIN32_LEAN_AND_MEAN /DNOMINMAX src\plugin.cpp /link /NOLOGO user32.lib /DEF:S2TConverter.def /OUT:build\Release\S2TConverter.dll
 ```
@@ -130,7 +130,7 @@ Output:
 #### Manual build (MSVC)
 
 ```bat
-cd /d C:\Users\a0953041880\notepadpp-s2t-plugin
+cd /d C:\Users\...\notepadpp-s2t-plugin
 mkdir build\Release 2>nul
 cl /nologo /LD /EHsc /std:c++17 /DUNICODE /D_UNICODE /DWIN32_LEAN_AND_MEAN /DNOMINMAX src\plugin.cpp /link /NOLOGO user32.lib /DEF:S2TConverter.def /OUT:build\Release\S2TConverter.dll
 ```
